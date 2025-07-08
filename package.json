@@ -1,0 +1,26 @@
+{
+  "name": "my-vue3-ts-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@opentiny/next-vue": "^0.0.2",
+    "@opentiny/tiny-vue-mcp": "^0.0.2",
+    "@opentiny/vue": "^3.24.0",
+    "@opentiny/vue-common": "^3.24.0",
+    "connect": "^3.7.0",
+    "vue": "^3.5.17"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.0",
+    "vue-tsc": "^2.2.10"
+  }
+}

@@ -1,275 +1,115 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
-import { 
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema
-} from '@modelcontextprotocol/sdk/types.js'
 import { createServer } from 'http'
+
+/**
+ * 🚀 TinyVue MCP SSE 代理服务器
+ * 
+ * 这是一个 MCP SSE 代理服务器，作为桥梁：
+ * - 上游：接收 Cursor 等 AI 客户端的 MCP 连接
+ * - 下游：通过 SSE 与前端的 useNextClient 通信
+ * 
+ * 工作流程：
+ * 1. Cursor → 本服务器 (MCP协议)
+ * 2. 本服务器 → 前端 useNextClient (SSE)
+ * 3. 前端 useNextClient → useNextServer (MessageChannel)
+ * 4. useNextServer → TinyVue组件 (注册工具)
+ */
 
 // 创建 MCP 服务器实例
 const server = new Server(
-  { name: 'tiny-vue-mcp-server', version: '1.0.0' },
+  { 
+    name: 'tiny-vue-mcp-sse-proxy', 
+    version: '1.0.0' 
+  },
   { 
     capabilities: {
-      tools: {},
-      resources: {}
+      tools: {},      // 工具能力将由前端动态提供
+      resources: {}   // 资源能力将由前端动态提供
     }
   }
 )
 
-// 模拟的表格数据存储
-let tableData = [
-  { _RID: 1, id: 1, name: 'Item 1', value: 'Value 1', status: 'Active' },
-  { _RID: 2, id: 2, name: 'Item 2', value: 'Value 2', status: 'Inactive' },
-  { _RID: 3, id: 3, name: 'Item 3', value: 'Value 3', status: 'Active' },
-  { _RID: 4, id: 4, name: 'Item 4', value: 'Value 4', status: 'Inactive' },
-  { _RID: 5, id: 5, name: 'Item 5', value: 'Value 5', status: 'Active' }
-]
+// 活跃连接计数
+let activeConnections = 0
 
-// 定义 TinyVue Grid 相关的工具
-const gridTools = [
-  {
-    name: 'demo-business_grid_component_tools_getTableData',
-    description: '表格-获取表格数据',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        refresh: { type: 'boolean', description: '是否刷新数据' }
-      }
-    }
-  },
-  {
-    name: 'demo-business_grid_component_tools_getColumns',
-    description: '表格-获取列信息',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        includeHidden: { type: 'boolean', description: '是否包含隐藏列' }
-      }
-    }
-  },
-  {
-    name: 'demo-business_grid_component_tools_insertRow',
-    description: '表格-插入新行',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: '名称' },
-        value: { type: 'string', description: '值' },
-        status: { type: 'string', description: '状态' }
-      },
-      required: ['name', 'value', 'status']
-    }
-  },
-  {
-    name: 'demo-business_grid_component_tools_updateRow',
-    description: '表格-更新行数据',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        _RID: { type: 'number', description: '行ID' },
-        name: { type: 'string', description: '名称' },
-        value: { type: 'string', description: '值' },
-        status: { type: 'string', description: '状态' }
-      },
-      required: ['_RID']
-    }
-  },
-  {
-    name: 'demo-business_grid_component_tools_removeRow',
-    description: '表格-删除行',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        _RID: { type: 'number', description: '行ID' }
-      },
-      required: ['_RID']
-    }
-  }
-]
-
-// 注册工具列表
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: gridTools
-  }
-})
-
-// 注册工具调用处理
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params
-  
-  try {
-    switch (name) {
-      case 'demo-business_grid_component_tools_getTableData':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(tableData)
-            }
-          ]
-        }
-      
-      case 'demo-business_grid_component_tools_getColumns':
-        const columns = [
-          { property: 'id', title: 'ID' },
-          { property: 'name', title: '名称' },
-          { property: 'value', title: '值' },
-          { property: 'status', title: '状态' }
-        ]
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(columns)
-            }
-          ]
-        }
-      
-      case 'demo-business_grid_component_tools_insertRow':
-        const newId = Math.max(...tableData.map(row => row.id)) + 1
-        const newRID = Math.max(...tableData.map(row => row._RID)) + 1
-        const newRow = {
-          _RID: newRID,
-          id: newId,
-          name: String(args?.name || `Item ${newId}`),
-          value: String(args?.value || `Value ${newId}`),
-          status: String(args?.status || 'Active')
-        }
-        tableData.push(newRow)
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'success'
-            }
-          ]
-        }
-      
-      case 'demo-business_grid_component_tools_updateRow':
-        const targetRowIndex = tableData.findIndex(row => row._RID === args?._RID)
-        if (targetRowIndex !== -1) {
-          if (args?.name) tableData[targetRowIndex].name = String(args.name)
-          if (args?.value) tableData[targetRowIndex].value = String(args.value)
-          if (args?.status) tableData[targetRowIndex].status = String(args.status)
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'success'
-              }
-            ]
-          }
-        }
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'failed: row not found'
-            }
-          ]
-        }
-      
-      case 'demo-business_grid_component_tools_removeRow':
-        const removeIndex = tableData.findIndex(row => row._RID === args?._RID)
-        if (removeIndex !== -1) {
-          tableData.splice(removeIndex, 1)
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'success'
-              }
-            ]
-          }
-        }
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'failed: row not found'
-            }
-          ]
-        }
-      
-      default:
-        throw new Error(`Unknown tool: ${name}`)
-    }
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`
-        }
-      ]
-    }
-  }
-})
-
-// 添加资源列表处理
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  return {
-    resources: [
-      {
-        uri: 'table://demo/data',
-        name: '演示表格数据',
-        description: '用于演示的表格数据资源'
-      }
-    ]
-  }
-})
-
-// 添加资源读取处理
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const { uri } = request.params
-  
-  if (uri === 'table://demo/data') {
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: 'application/json',
-          text: JSON.stringify(tableData, null, 2)
-        }
-      ]
-    }
-  }
-  
-  throw new Error(`Resource not found: ${uri}`)
-})
-
+// 创建 HTTP 服务器处理 SSE 连接
 const httpServer = createServer((req, res) => {
-  // CORS headers
+  // 设置 CORS 头部，允许跨域访问
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,sse-session-id')
   
+  // 处理预检请求
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
     res.end()
+    console.log('✅ 收到 OPTIONS 预检请求，已返回 200')
     return
   }
   
-  // 只处理 /sse 路径
+  // 处理 SSE 连接
   if (req.url?.startsWith('/sse')) {
+    const sessionId = req.headers['sse-session-id']
+    console.log(`📡 新的 SSE 连接请求 ${sessionId ? `(会话 ID: ${sessionId})` : '(无会话 ID)'}`)
+    
+    // 创建 SSE 传输层
     const transport = new SSEServerTransport('/sse', res)
+    
+    // 连接到 MCP 服务器
     server.connect(transport)
+    activeConnections++
+    
+    console.log(`✅ SSE 客户端已连接 (当前连接数: ${activeConnections})`)
+    console.log('🔗 等待前端注册 MCP 工具...')
+    
+    // 监听连接关闭
+    res.on('close', () => {
+      activeConnections--
+      console.log(`❌ SSE 客户端断开连接 (剩余连接数: ${activeConnections})`)
+    })
   } else {
+    // 其他路径返回 404
     res.writeHead(404)
     res.end('Not Found')
+    console.log(`⚠️ 收到未知路径请求: ${req.url}`)
   }
 })
 
-httpServer.listen(3001, () => {
-  console.log('TinyVue MCP Server running at http://localhost:3001')
-  console.log('Available endpoints:')
-  console.log('- SSE: /sse')
-  console.log('Available tools:')
-  gridTools.forEach(tool => {
-    console.log(`  - ${tool.name}: ${tool.description}`)
+// 启动服务器
+const PORT = 3001
+httpServer.listen(PORT, () => {
+  console.log('🚀 TinyVue MCP SSE 代理服务器启动成功！')
+  console.log('📍 端口:', PORT)
+  console.log('🔗 SSE 端点: http://localhost:' + PORT + '/sse')
+  console.log('')
+  console.log('📋 架构说明:')
+  console.log('  Cursor/AI客户端')
+  console.log('       ↓ (MCP协议)')
+  console.log('  本SSE代理服务器 (3001端口)')
+  console.log('       ↓ (SSE)')
+  console.log('  前端 useNextClient')
+  console.log('       ↓ (MessageChannel)')
+  console.log('  前端 useNextServer')
+  console.log('       ↓ (自动注册)')
+  console.log('  TinyVue组件')
+  console.log('')
+  console.log('⏳ 等待连接...')
+})
+
+// 优雅关闭
+process.on('SIGINT', () => {
+  console.log('\n🛑 正在关闭服务器...')
+  httpServer.close(() => {
+    console.log('✅ 服务器已关闭')
+    process.exit(0)
+  })
+})
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 正在关闭服务器...')
+  httpServer.close(() => {
+    console.log('✅ 服务器已关闭')
+    process.exit(0)
   })
 })

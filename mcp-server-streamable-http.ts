@@ -25,7 +25,9 @@ const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 app.post('/mcp', async (req, res) => {
     // Check for existing session ID
     console.log('post-req.headers', req.headers)
+    console.log('post-req.body', req.body)
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    console.log('sessionId', sessionId)
     let transport: StreamableHTTPServerTransport;
   
     if (sessionId && transports[sessionId]) {
@@ -41,8 +43,8 @@ app.post('/mcp', async (req, res) => {
         },
         // DNS rebinding protection is disabled by default for backwards compatibility. If you are running this server
         // locally, make sure to set:
-        // enableDnsRebindingProtection: true,
-        // allowedHosts: ['127.0.0.1'],
+        enableDnsRebindingProtection: true,
+        allowedHosts: ['127.0.0.1'],
       });
   
       // Clean up transport when closed
@@ -71,6 +73,24 @@ app.post('/mcp', async (req, res) => {
           content: [{
             type: "text",
             text: String(weightKg / (heightM * heightM))
+          }]
+        })
+      );
+
+      server.registerTool(
+        "getPOI",
+        {
+          title: "打开周边监控",
+          description: "根据经纬度打开周边监控",
+          inputSchema: {
+            x_poi: z.number(),
+            y_poi: z.number()
+          }
+        },
+        async ({ x_poi, y_poi }) => ({
+          content: [{
+            type: "text",
+            text: String(x_poi + y_poi)
           }]
         })
       );
